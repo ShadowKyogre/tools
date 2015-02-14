@@ -16,20 +16,21 @@ import couchdb
 import lxml.html
 import lxml.html.clean
 
-from lxml.cssselect import CSSSelector
+from lxml import etree
+
+from cssselect import HTMLTranslator
 
 from aardtools.compiler import ArticleSource, Article
 from aardtools.wiki import tex
 
 tojson = functools.partial(json.dumps, ensure_ascii=False)
 
-CSSSelector = functools.partial(CSSSelector, translator='html')
-
 log = logging.getLogger(__name__)
 
 DEFAULT_DESCRIPTION = """ %(title)s for Aard Dictionary is a collection of text documents from %(server)s (articles only). Some documents or portions of documents may have been omited or could not be converted to Aard Dictionary format. All documents can be found online at %(server)s under the same title as displayed in Aard Dictionary.
 """
 
+trns = HTMLTranslator()
 mathcmds = ('latex', 'blahtex', 'texvc')
 
 def math_as_datauri(text):
@@ -92,7 +93,9 @@ SELECTORS = []
 
 def process_initializer(css_selectors):
     for css_selector in css_selectors:
-        SELECTORS.append(CSSSelector(css_selector))
+        #SELECTORS.append(CSSSelector(css_selector))
+        SELECTORS.append(trns.css_to_xpath(css_selector))
+
 
 
 class CouchArticleSource(ArticleSource, collections.Sized):
@@ -279,13 +282,13 @@ def clean_and_handle_errors((title, aliases, text, rtl)):
 
 NEWLINE_RE = re.compile(r'[\n]{2,}')
 
-SEL_IMG_TEX = CSSSelector('img.tex')
-SEL_A_NEW = CSSSelector('a.new')
-SEL_A_HREF_WIKI = CSSSelector('a[href^="/wiki/"]')
-SEL_A_HREF_NO_PROTO = CSSSelector('a[href^="//"]')
-SEL_IMG_SRC_NO_PROTO = CSSSelector('img[src^="//"]')
-SEL_A_HREF_CITE = CSSSelector('a[href^="#cite"]')
-SEL_A_IMAGE = CSSSelector('a.image')
+SEL_IMG_TEX = trns.css_to_xpath('img.tex')
+SEL_A_NEW = trns.css_to_xpath('a.new')
+SEL_A_HREF_WIKI = trns.css_to_xpath('a[href^="/wiki/"]')
+SEL_A_HREF_NO_PROTO = trns.css_to_xpath('a[href^="//"]')
+SEL_IMG_SRC_NO_PROTO = trns.css_to_xpath('img[src^="//"]')
+SEL_A_HREF_CITE = trns.css_to_xpath('a[href^="#cite"]')
+SEL_A_IMAGE = trns.css_to_xpath('a.image')
 
 CLEANER = lxml.html.clean.Cleaner(
     comments=True,
@@ -308,10 +311,10 @@ def cleanup(text, rtl=False):
     CLEANER(doc)
 
     for selector in SELECTORS:
-        for item in selector(doc):
+        for item in doc.xpath(selector):
             item.drop_tree()
 
-    for item in SEL_IMG_TEX(doc):
+    for item in doc.xpath(SEL_IMG_TEX):
         item.attrib.pop('srcset', None)
         equation = item.attrib.pop('alt', None)
         if equation:
@@ -319,24 +322,24 @@ def cleanup(text, rtl=False):
             if data_uri:
                 item.attrib['src'] = data_uri
 
-    for item in SEL_A_IMAGE(doc):
+    for item in doc.xpath(SEL_A_IMAGE):
         item.drop_tag()
 
-    for item in SEL_A_NEW(doc):
+    for item in doc.xpath(SEL_A_NEW):
         item.attrib.pop('href', None)
 
-    for item in SEL_A_HREF_WIKI(doc):
+    for item in doc.xpath(SEL_A_HREF_WIKI):
         item.attrib['href'] = item.attrib['href'].replace('/wiki/', '')
 
-    for item in SEL_A_HREF_NO_PROTO(doc):
+    for item in doc.xpath(SEL_A_HREF_NO_PROTO):
         item.attrib['href'] = 'http:' + item.attrib['href']
 
-    for item in SEL_IMG_SRC_NO_PROTO(doc):
+    for item in doc.xpath(SEL_IMG_SRC_NO_PROTO):
         item.attrib['src'] = 'http:' + item.attrib['src']
         if 'srcset' in item.attrib:
             item.attrib['srcset'] = item.attrib['srcset'].replace('//', 'http://')
 
-    for item in SEL_A_HREF_CITE(doc):
+    for item in doc.xpath(SEL_A_HREF_CITE):
         item.attrib['onclick'] = 'return s("%s")' % item.attrib['href'][1:]
 
     result = lxml.html.tostring(doc)
